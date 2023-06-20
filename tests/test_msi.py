@@ -5,7 +5,6 @@ import pytest
 from msi import get_node_visitor
 from msi import get_source_filename
 from msi import NodeTransformer
-from msi import read_and_parse_source_file
 from msi import read_template
 
 
@@ -31,6 +30,48 @@ if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
 """
     return code
+
+
+@pytest.fixture(scope="function")
+def source_filename(code_block, tmp_path):
+    source_file = tmp_path / "source.py"
+    source_file.write_text(code_block)
+    source_filename = str(source_file.absolute()).strip("'")
+    return source_filename
+
+
+@pytest.fixture
+def template_lines():
+    return ["# A Heading", "```python", "", "```"]
+
+
+@pytest.mark.parametrize(
+    "options, expected, removed",
+    [
+        ("| nomain", ["import a"], ["def main(args):"]),
+        ("| noentry", ["def main(args):"], ["if __name__ == '__main__':"]),
+        ("| noimport", ["if __name__ == '__main__'"], ["import a"]),
+        (": import_func", ["def import_func(b):"], ["import a"]),
+        (
+            ": import_func main",
+            ["def import_func(b):", "def main(args):"],
+            ["import a"],
+        ),
+    ],
+)
+def test_read_template(
+    options, expected, removed, source_filename, template_lines, tmp_path
+):
+    template_filename = tmp_path / "template.mdt"
+    template_lines[-2] = (
+        "{{ " + source_filename + " " + options + " }}"
+    )  # using concat to avoid ' char in source filename
+    template_filename.write_text("\n".join(template_lines))
+    output = read_template(str(template_filename))
+    for item in expected:
+        assert item in "".join(output)
+    for item in removed:
+        assert item not in "".join(output)
 
 
 @pytest.mark.parametrize(
